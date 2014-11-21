@@ -1,0 +1,42 @@
+PROJECT= .
+DATA_DIR=${PROJECT}/data
+DATA_SOURCE_DIR=${PROJECT}/data/source
+DATA_TRANSFORM_DIR=${PROJECT}/data/transform
+DATA_GOODDATA_DIR=${PROJECT}/data/gooddata
+DATA_TMP_DIR=${PROJECT}/data/tmp
+DATA_RECOVERY_DIR=${PROJECT}/data/recovery
+GRAPH_DIR=${PROJECT}/graph
+META_DIR=${PROJECT}/meta
+TRANS_DIR=${PROJECT}/trans
+MODEL_DIR=${PROJECT}/model
+TODAY=today()
+
+# ADS params
+<%= workspace_format(workspace_params["ADS"]) %>
+
+# S3 params
+<%= workspace_format(workspace_params["S3"]) %>
+S3_ROOT_URL=https://${S3_ACCESSKEY}:${S3_SECRETKEY}@${S3_BUCKET}.${S3_SERVER}/${S3_FOLDER}
+
+#GA params:
+<%= workspace_format(workspace_params["GA"]) %>
+S3_GA_PARAM_URL=${S3_ROOT_URL}/${S3_GA_PARAM_URI}
+
+# PARAMS DATE FORMAT
+DATE_FORMAT=yyyy-MM-dd
+
+#Twitter params:
+<%= workspace_format(workspace_params["TWITTER"]) %>
+S3_TW_PARAM_URL=${S3_ROOT_URL}/${S3_TW_PARAM_URI}
+
+#Twitter Request URL:
+TWCOMMUNITY_URL=https://api.twitter.com/1.1/users/show.json?screen_name=
+TWTIMELINE_URL=https://api.twitter.com/1.1/statuses/user_timeline.json?screen_name=
+TWTIMELINE_URL_PRM=&count=200&include_rts=tru
+TWMENTIONS_URL=https://api.twitter.com/1.1/search/tweets.json?q=%40
+TWMENTIONS_URL_PRM=&count=100
+
+#FB params:
+<%= workspace_format(workspace_params["FB"]) %>
+S3_FB_PARAM_URL=${S3_ROOT_URL}/${S3_FB_PARAM_URI}
+S3_FB=${S3_ROOT_URL}/${S3_FB_URI}

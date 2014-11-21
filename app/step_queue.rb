@@ -2,7 +2,11 @@ require 'gooddata'
 require 'rest-client'
 require 'sequel'
 require 'jdbc/dss'
+require 'erb'
+
 Jdbc::DSS.load_driver
+
+require_relative 'github'
 
 def raise_arg_error(e, message='')
   raise ArgumentError, "#{e.message}\n #{message}\n #{USAGE}"
@@ -22,7 +26,10 @@ class StepQueue
       @@progress = progress
       # connect
       begin
-        @@client = GoodData.connect(credentials['username'], credentials['password'], server: params['server'])
+        if credentials['gooddata'].nil?
+          raise ArgumentError, "GoodData credentials are missing"
+        end
+        @@client = GoodData.connect(credentials['gooddata']['username'], credentials['gooddata']['password'], server: params['server'])
       rescue ArgumentError => e
         raise_arg_error(e)
       rescue RestClient::Unauthorized => e
@@ -32,7 +39,7 @@ class StepQueue
       end
 
       @@queue.each_with_index do |step, i|
-        puts "#{i+1}. #{step.activity_caption}..."
+        puts "#{i + 1}. #{step.activity_caption}..."
 
         # if it's not done do it
         if @@progress[step.progress_field].nil?
@@ -67,7 +74,7 @@ class StepQueue
       def run(credentials, params)
         begin
           # clone the project and write it to progress
-          new_project = GoodData::Command::Project.clone(params['master_project_id'], client: StepQueue.client, auth_token: credentials['auth_token'])
+          new_project = GoodData::Command::Project.clone(params['master_project_id'], client: StepQueue.client, auth_token: credentials['gooddata']['auth_token'])
           return new_project.pid
         rescue ArgumentError => e
           raise_arg_error(e)
@@ -88,66 +95,6 @@ class StepQueue
       def run(credentials, params)
         # TODO
         'b4d557ae08439f3a4b8ed247e7951a7e'
-      end
-    end
-  end
-
-  class GitHub
-    class << self
-      def download_file_to_string(github_token, setup={}, raw=true, link=nil)
-        if link
-          url = link
-        else
-          sql_repo_name = setup['repo_name']
-          sql_repo_owner = setup['repo_owner']
-
-          # URI join won't make it:
-          sql_path = URI.escape(setup['path'])
-          sql_path = "/#{sql_path}" if sql_path[0] != '/'
-
-          revision = setup['revision']
-
-          url = "https://api.github.com/repos/#{sql_repo_owner}/#{sql_repo_name}/contents#{sql_path}"
-          url = "#{url}?ref=#{revision}" if revision
-        end
-        puts "Fetching from #{url}..."
-
-        format = raw ? 'raw' : 'json'
-        # get the file content from github
-        begin
-          downloaded_string = RestClient.get(url, {:accept => "application/vnd.github.v3.#{format}", :authorization => "token #{github_token}"})
-        rescue RestClient::ResourceNotFound => e
-          raise_arg_error(e, "The url '#{url}' doesn't exist in github. Check your repo_name '#{setup['repo_name']}', repo_owner '#{setup['repo_owner']}' and/or path '#{setup['path']}'.")
-        rescue RestClient::Unauthorized => e
-          raise_arg_error(e, "The github_token is wrong.")
-        end
-        downloaded_string
-      end
-      def download_directory(github_token, setup, target_dir, link=nil)
-
-        # create a dir for the contents
-        # create the target dir and make sure it's absolute path
-        FileUtils.mkdir_p(target_dir)
-        target_dir = File.expand_path(target_dir)
-
-        # see what is there
-        json_str = download_file_to_string(github_token, setup, false, link)
-
-        # parse it
-        contents = JSON.parse(json_str)
-        contents.each do |dir_item|
-          # if it's a file download it and write it to file
-          if dir_item['type'] == 'file'
-            str = download_file_to_string(github_token, {}, true, dir_item['url'])
-            target_filename = File.join(target_dir, dir_item['name'])
-            IO.write(target_filename, str)
-          elsif dir_item['type'] == 'dir'
-            download_directory(github_token, {}, File.join(target_dir, dir_item['name']), dir_item['url'])
-          else
-            fail "Some weird directory item type: #{dir_item}"
-          end
-        end
-        target_dir
       end
     end
   end
@@ -176,8 +123,12 @@ class StepQueue
         ads_jdbc_url = "jdbc:dss://secure.gooddata.com/gdc/dss/instances/#{StepQueue.progress['ads_instance_id']}"
 
         # execute the sql
-        Sequel.connect(ads_jdbc_url, username: credentials['username'], password: credentials['password']) do |c|
-          c.run(sql_string)
+        begin
+          Sequel.connect(ads_jdbc_url, username: credentials['gooddata']['username'], password: credentials['gooddata']['password']) do |c|
+            c.run(sql_string)
+          end
+        rescue Sequel::DatabaseConnectionError => e
+          raise_arg_error(e, 'Cannot connect to ADS, check that your gooddata user has access')
         end
         true
       end
@@ -200,23 +151,120 @@ class StepQueue
     end
   end
 
+  # Set up parameters.
+  # workspace
+  class GenerateWorkspaceParams < Step
+    TAGET_DIR = 'etl'
+    WORKSPACE = 'workspace.prm'
+    ERB_FILE = 'workspace.prm.erb'
+    class << self
+      def progress_field
+        'workspace_params'
+      end
+      def activity_caption
+        'Generating workspace.prm'
+      end
+      def run(credentials, params)
+        FileUtils.mkdir_p(TAGET_DIR)
+        workspace_params = params['workspace']
+        if workspace_params.nil?
+          return nil
+        end
 
-  # Download ETL from git
-   # "type"=>"dir"
-   #  "type"=>"file",
-   #  "url"=>
-   #   "https://api.github.com/repos/gooddata/ms_projects/contents/projects/SocialMediaFunnel/Social%20Media%20Funnel/graph/Run_all.grf?ref=master"
+        # render workspace from template
+        erb = IO.read(File.join(File.dirname(__FILE__), ERB_FILE))
+        renderer = ERB.new(erb)
+        workspace_file = File.join(TAGET_DIR, WORKSPACE)
+
+        # write the string to file
+        File.open(workspace_file, 'w') do |f|
+          f.write(renderer.result(binding))
+        end
+        workspace_file
+      end
+
+      # format a hash with params so that it can be in workspace.prm
+      def workspace_format(hsh)
+        hsh.collect{ |k,v| "#{k}=#{URI.encode(v)}"}.join("\n")
+      end
+    end
+  end
+
   # Set up parameters.
   # s3
-  # workspace
+  class GenerateS3Params < Step
+    TAGET_DIR = 's3'
+    class << self
+      def progress_field
+        's3_params_folder'
+      end
+      def activity_caption
+        'Generating s3 params'
+      end
+      def run(credentials, params)
+
+        # init s3
+        s3_workspace = params['workspace']['S3']
+        bucket_name = s3_workspace['S3_BUCKET']
+
+        s3 = AWS::S3.new(
+          :access_key_id => s3_workspace['S3_ACCESSKEY'],
+          :secret_access_key => credentials['process']['S3_SECRETKEY']
+        )
+        bucket = s3.buckets[bucket_name]
+
+        # generate csv from each s3 item
+        FileUtils.mkdir_p(TAGET_DIR)
+        params['s3'].each do |name, csv_data|
+          s3_params_path = params['workspace'][name][csv_data['path_key']]
+          s3_folder = params['workspace']['S3']['S3_FOLDER']
+
+          local_path = File.join(TAGET_DIR, File.basename(s3_params_path))
+          CSV.open(local_path, "wb", force_quotes: true) do |csv|
+            # write the header there
+            csv << csv_data['header']
+
+            # and all the values as well
+            csv_data['values'].each do |row|
+              csv << row
+            end
+          end
+
+          # strip the slashes at the beginning / end because URI.join is crap
+          s3_folder = s3_folder[0..-2] if s3_folder[-1] == '/'
+          s3_params_path = s3_params_path[1..-1] if s3_params_path == '/'
+          target_path = "#{s3_folder}/#{s3_params_path}"
+
+          # upload the file from local_path to s3_params_path
+          obj = bucket.objects[target_path]
+          err_message = 'Paste it there as it is, no url encoding.'
+          begin
+            obj.write(Pathname.new(local_path))
+          rescue AWS::S3::Errors::SignatureDoesNotMatch => e
+            raise_arg_error(e, "The s3 credentials are wrong. Check out S3_SECRETKEY in credentials. #{err_message}")
+          rescue AWS::S3::Errors::InvalidAccessKeyId => e
+            raise_arg_error(e, "The s3 access key is wrong. Check out S3_ACCESSKEY in params. #{err_message}")
+          rescue AWS::S3::Errors::NoSuchBucket => e
+            raise_arg_error(e, "The s3 bucket is wrong. Check out S3_BUCKET in params. #{err_message}")
+          rescue AWS::S3::Errors::AccessDenied => e
+            raise_arg_error(e, "You don't have access to the bucket or folder you've provided. Check out params S3_BUCKET, S3_FOLDER, S3_ACCESSKEY and your s3 credentials (S3_SECRETKEY). #{err_message}")
+          end
+        end
+        TAGET_DIR
+      end
+    end
+  end
 
   # Deploy CloudConnect project.
+  # bacha - URI.encode vsechny parametry, i hidden
 
   @@queue = [
     CloneProject,
     ProvisionADS,
     InitializeADS,
     DownloadETL,
+    GenerateWorkspaceParams,
+    GenerateS3Params
   ]
 
 end
