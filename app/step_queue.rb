@@ -160,7 +160,8 @@ class StepQueue
       end
       def run(credentials, params)
         FileUtils.rm_rf(ETL_DIR)
-        GitHub.download_directory(credentials['github_token'], params['etl'], ETL_DIR)
+        target_dir = File.join(ETL_DIR, params['etl']['path'].split('/')[-1])
+        GitHub.download_directory(credentials['github_token'], params['etl'], target_dir)
       end
     end
   end
@@ -198,7 +199,8 @@ class StepQueue
 
       # format a hash with params so that it can be in workspace.prm
       def workspace_format(hsh)
-        hsh.collect{ |k,v| "#{k}=#{URI.encode(v)}"}.join("\n")
+        # no URI.encode here - it contains some paths and it makes them wrong
+        hsh.collect{ |k,v| "#{k}=#{v}"}.join("\n")
       end
     end
   end
@@ -371,8 +373,8 @@ class StepQueue
           sched = process.create_schedule(
             cron,
             executable_filename,
-            params: params['etl']['params'],
-            hidden_params: credentials['process']
+            params: encode_params(params['etl']['params']),
+            hidden_params: encode_params(credentials['process'])
           )
         rescue RestClient::BadRequest => e
           raise_arg_error(e, "The executable #{executable_filename} doesn't exist in the process or your cron #{cron} is wrong. Please check your params etl executable_filename and cron." )
