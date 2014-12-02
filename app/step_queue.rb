@@ -3,14 +3,20 @@ require 'rest-client'
 require 'sequel'
 require 'jdbc/dss'
 require 'erb'
+require 'cgi'
 
 Jdbc::DSS.load_driver
+GoodData.logging_on
 
+#TODO: parametr pro ADS v grafech, kouknout jestli plnim cim mam
 require_relative 'github'
 
 def raise_arg_error(e, message='')
-  raise ArgumentError, "#{e.message}\n #{message}\n #{USAGE}"
+  response = e.respond_to?('response') ? e.response : ''
+  raise ArgumentError, "#{message}\n #{USAGE}\nDetails: #{e.message}\n#{response}"
 end
+
+ETL_DIR = 'etl'
 
 class StepQueue
   PROGRESS_FILE = 'progress.json'
@@ -58,6 +64,7 @@ class StepQueue
     end
 
   end
+
   class Step
   end
 
@@ -74,7 +81,13 @@ class StepQueue
       def run(credentials, params)
         begin
           # clone the project and write it to progress
-          new_project = GoodData::Command::Project.clone(params['master_project_id'], client: StepQueue.client, auth_token: credentials['gooddata']['auth_token'])
+          new_project = GoodData::Command::Project.clone(
+            params['master_project_id'],
+            client: StepQueue.client,
+            auth_token: credentials['gooddata']['auth_token'],
+            data: false,
+            users: false
+          )
           return new_project.pid
         rescue ArgumentError => e
           raise_arg_error(e)
@@ -94,6 +107,8 @@ class StepQueue
 
       def run(credentials, params)
         # TODO
+        # create ADS
+        # add workspace ADS.ADS_USER as a user
         'b4d557ae08439f3a4b8ed247e7951a7e'
       end
     end
@@ -136,7 +151,6 @@ class StepQueue
   end
 
   class DownloadETL < Step
-    TAGET_DIR = 'etl'
     class << self
       def progress_field
         'etl_directory_path'
@@ -145,8 +159,8 @@ class StepQueue
         'Downloading ETL from github'
       end
       def run(credentials, params)
-        FileUtils.rm_rf(TAGET_DIR)
-        GitHub.download_directory(credentials['github_token'], params['etl'], TAGET_DIR)
+        FileUtils.rm_rf(ETL_DIR)
+        GitHub.download_directory(credentials['github_token'], params['etl'], ETL_DIR)
       end
     end
   end
@@ -154,7 +168,6 @@ class StepQueue
   # Set up parameters.
   # workspace
   class GenerateWorkspaceParams < Step
-    TAGET_DIR = 'etl'
     WORKSPACE = 'workspace.prm'
     ERB_FILE = 'workspace.prm.erb'
     class << self
@@ -165,7 +178,7 @@ class StepQueue
         'Generating workspace.prm'
       end
       def run(credentials, params)
-        FileUtils.mkdir_p(TAGET_DIR)
+        FileUtils.mkdir_p(ETL_DIR)
         workspace_params = params['workspace']
         if workspace_params.nil?
           return nil
@@ -174,7 +187,7 @@ class StepQueue
         # render workspace from template
         erb = IO.read(File.join(File.dirname(__FILE__), ERB_FILE))
         renderer = ERB.new(erb)
-        workspace_file = File.join(TAGET_DIR, WORKSPACE)
+        workspace_file = File.join(ETL_DIR, WORKSPACE)
 
         # write the string to file
         File.open(workspace_file, 'w') do |f|
@@ -255,8 +268,120 @@ class StepQueue
     end
   end
 
-  # Deploy CloudConnect project.
-  # bacha - URI.encode vsechny parametry, i hidden
+  class DeployETL < Step
+    ETL_DIR = 'etl'
+    PROCESS_NAME = 'Oblivion'
+
+    class << self
+      def progress_field
+        'etl_process_id'
+      end
+      def activity_caption
+        'Deploying ETL process'
+      end
+      def run(credentials, params)
+        if params['etl'].nil?
+          raise ArgumentError, "Params are missing the 'etl' section."
+        end
+
+        if (Dir.entries(ETL_DIR) - %w{ . .. }).empty?
+          raise ArgumentError, "The directory '#{ETL_DIR}' is empty."
+        end
+
+        # deploy everything that's in etl
+        process = GoodData::Command::Process.deploy(
+          ETL_DIR,
+          name: PROCESS_NAME,
+          type: params['etl']['type'] || 'GRAPH',
+          client: StepQueue.client,
+          project_id: StepQueue.progress['new_project_id']
+        )
+        process.obj_id
+      end
+    end
+  end
+
+  class ETLProcessStep < Step
+    def self.encode_params(params)
+      if params.nil?
+        return nil
+      end
+      Hash[params.collect { |k, v| [k, CGI.escape(v)] }]
+    end
+  end
+
+  class RunETL < ETLProcessStep
+    class << self
+      def progress_field
+        'etl_process_execution_link'
+      end
+      def activity_caption
+        'Executing ETL process'
+      end
+      def run(credentials, params)
+        if params['etl'].nil?
+          raise ArgumentError, "Params are missing the 'etl' section."
+        end
+        process_id = StepQueue.progress['etl_process_id']
+
+        executable_filename = params['etl']['executable_filename']
+
+        pid = StepQueue.progress['new_project_id']
+
+        begin
+          ex = StepQueue.client.projects(pid).processes(process_id).start_execution(
+            executable_filename,
+            params: encode_params(params['etl']['params']),
+            hidden_params: encode_params(credentials['process']),
+          )
+        rescue RestClient::ResourceNotFound => e
+          raise_arg_error(e, "The executable #{executable_filename} doesn't exist in the process. Please check your params etl executable_filename" )
+        end
+        ex_link = ex['executionTask']['links']['detail']
+        puts "Process execution started, see #{ex_link}"
+        ex_link
+      end
+    end
+  end
+
+  class ScheduleETL < ETLProcessStep
+    DEFAULT_CRON = '00 00 * * *'
+
+    class << self
+      def progress_field
+        'etl_process_schedule_link'
+      end
+      def activity_caption
+        'Scheduling ETL process'
+      end
+      def run(credentials, params)
+        if params['etl'].nil?
+          raise ArgumentError, "Params are missing the 'etl' section."
+        end
+
+        process_id = StepQueue.progress['etl_process_id']
+
+        executable_filename = params['etl']['executable_filename']
+
+        pid = StepQueue.progress['new_project_id']
+        process = StepQueue.client.projects(pid).processes(process_id)
+        cron = params['etl']['cron'] || DEFAULT_CRON
+
+        begin
+          sched = process.create_schedule(
+            cron,
+            executable_filename,
+            params: params['etl']['params'],
+            hidden_params: credentials['process']
+          )
+        rescue RestClient::BadRequest => e
+          raise_arg_error(e, "The executable #{executable_filename} doesn't exist in the process or your cron #{cron} is wrong. Please check your params etl executable_filename and cron." )
+        end
+        puts "Process scheduled, uri: #{sched.uri}"
+        sched.uri
+      end
+    end
+  end
 
   @@queue = [
     CloneProject,
@@ -264,7 +389,10 @@ class StepQueue
     InitializeADS,
     DownloadETL,
     GenerateWorkspaceParams,
-    GenerateS3Params
+    GenerateS3Params,
+    DeployETL,
+    RunETL,
+    ScheduleETL
   ]
 
 end
