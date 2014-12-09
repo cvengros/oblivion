@@ -1,9 +1,4 @@
 require_relative('app/step_queue')
-# co by to melo umet:
-#   kdyz se to vysere v kroku x, bude to schopny navazat - progres nekam do filu
-#   user friendly hlasky na nejcastejsi pripady co se muze rozesrat
-
-
 
 USAGE = 'Usage: bundle exec setup.rb'
 PARAMS_FILE = 'params.json'

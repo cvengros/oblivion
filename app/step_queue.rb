@@ -6,7 +6,7 @@ require 'erb'
 require 'cgi'
 
 Jdbc::DSS.load_driver
-GoodData.logging_on
+# GoodData.logging_on
 
 #TODO: parametr pro ADS v grafech, kouknout jestli plnim cim mam
 require_relative 'github'
@@ -49,9 +49,11 @@ class StepQueue
 
         # if it's not done do it
         if @@progress[step.progress_field].nil?
+          step_result = step.run(credentials, params)
           # save the progress
-          @@progress[step.progress_field] = step.run(credentials, params)
+          @@progress[step.progress_field] = step_result
           save_progress(@@progress)
+          puts "Created #{step.progress_field}: #{step_result}"
         else
           puts "Skipped, it's already done."
         end
@@ -106,10 +108,18 @@ class StepQueue
       end
 
       def run(credentials, params)
-        # TODO
-        # create ADS
-        # add workspace ADS.ADS_USER as a user
-        'b4d557ae08439f3a4b8ed247e7951a7e'
+        begin
+          # create ADS
+          dwh = GoodData::Command::DataWarehouse.create(
+            title: 'Oblivion',
+            token: credentials['gooddata']['auth_token'],
+            client: StepQueue.client
+          )
+        rescue RestClient::BadRequest => e
+          raise_arg_error(e, 'Cannot create ADS, check that your auth_token is correct.')
+        end
+        #'b4d557ae08439f3a4b8ed247e7951a7e'
+        dwh.id
       end
     end
   end
