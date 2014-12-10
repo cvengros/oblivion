@@ -1,0 +1,99 @@
+{
+  "master_project_id": "clg78bblebyau961pd5512dn089e3utq",
+  "sql_setup": {
+    "repo_name": "ms_projects",
+    "repo_owner": "gooddata",
+    "path": "/projects/SocialMediaFunnel/Social Media Funnel/conf/tables.sql",
+    "revision": null
+  },
+  "etl": {
+    "repo_name": "ms_projects",
+    "repo_owner": "gooddata",
+    "path": "/projects/SocialMediaFunnel/Social Media Funnel/graph",
+    "revision": "8e791a5c6ccbef3716987bd6cd7be284003cbec8",
+    "executable_filename": "graph/Run_all.grf",
+    "params": {
+      "END_DATETIME": "yesterday",
+      "START_DATETIME": "yesterday",
+      "COUNTRY": ""
+    }
+  },
+  "workspace": {
+    "ADS": {
+      "ADS_USER": "ps-etl+social@gooddata.com"
+    },
+    "S3": {
+      "S3_SERVER": "s3.amazonaws.com",
+      "S3_BUCKET": "gdc-ms-int",
+      "S3_ACCESSKEY": "AKIAIQHCSJYAFSLPDYJQ",
+      "S3_FOLDER": "AIDAJWNA3T6EA4HNEXB6G_gdc-ms-int_SocialChannelFunnel"
+    },
+    "GA": {
+      "S3_GA_PARAM_URI": "etl_params/GA_params.csv",
+      "GA_LOAD_DAYS": "3",
+      "GA_USER": ""
+    },
+    "TWITTER": {
+      "S3_TW_PARAM_URI": "etl_params/Twitter_params.csv",
+      "TWITTER_USER": "",
+      "TWITTER_USER_EMAIL": "",
+      "TWITTER_CONSUMER_KEY": "",
+      "TWITTER_ACCESS_TOKEN": ""
+    },
+    "FB": {
+      "S3_FB_PARAM_URI": "etl_params/facebook.csv",
+      "S3_FB_URI": "facebook",
+      "DAYS_TO_RUN": "1",
+      "FB_DAY_TO_FIX": "5"
+    }
+  },
+  "s3": {
+    "TWITTER": {
+      "path_key": "S3_TW_PARAM_URI",
+      "header": ["COUNTRY", "TWITTER_SCREEN_NAME"],
+      "values": [
+        ["", ""]
+      ]
+    },
+    "GA": {
+      "path_key": "S3_GA_PARAM_URI",
+      "header": ["COUNTRY","GOOGLE_ID","TYPE"],
+      "values":[
+        ["GoodData", "7598518", "PAGE"],
+        ["GoodData", "50001817", "PAGE"],
+        ["GoodData", "11775704", "PAGE"],
+        ["GoodData", "33577559", "PAGE"],
+        ["GoodData", "23267128", "PAGE"],
+        ["GoodData", "86907820", "PAGE"],
+        ["GoodData", "86934337", "PAGE"],
+        ["GoodData", "68487194", "PAGE"],
+        ["GoodData", "61779608", "PAGE"],
+        ["GoodData", "89769161", "PAGE"],
+        ["GoodData", "89751790", "PAGE"],
+        ["GoodData", "37814245", "PAGE"],
+        ["GoodData", "38608492", "PAGE"],
+        ["GoodData", "86296405", "PAGE"],
+        ["GoodData", "74439861", "PAGE"],
+        ["GoodData", "70824257", "PAGE"],
+        ["GoodData", "83656884", "PAGE"],
+        ["GoodData", "73150193", "PAGE"],
+        ["GoodData", "79585073", "PAGE"],
+        ["GoodData", "89209614", "PAGE"],
+        ["GoodData", "55464566", "PAGE"],
+        ["GoodData", "85696213", "PAGE"],
+        ["GoodData", "70254201", "PAGE"],
+        ["GoodData", "63878868", "PAGE"],
+        ["GoodData", "7468896", "PAGE"],
+        ["GoodData", "41101318", "PAGE"]
+      ]
+    },
+    "FB": {
+      "path_key": "S3_FB_PARAM_URI",
+      "header": ["object_id","object_name","country","gd_token_id","type"],
+      "values": [
+        ["729979143717909","Honda VFR","CR","AGSPJVGrh2qWfz3KYe11iXZUYf7LEZAf","page"],
+        ["337791933070310","Ducati 916 Test Page","CR","AGSPJVGrh2qWfz3KYe11iXZUYf7LEZAf","page"]
+      ]
+    }
+  }
+}
