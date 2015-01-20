@@ -1,7 +1,7 @@
-oblivion
+Oblivion
 ========
 
-Agile and social B2C template provisioning.
+Welcome to Oblivion, agile and social B2C template provisioning.
 
 # How to use it
 Get the code

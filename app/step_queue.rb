@@ -118,7 +118,6 @@ class StepQueue
         rescue RestClient::BadRequest => e
           raise_arg_error(e, 'Cannot create ADS, check that your auth_token is correct.')
         end
-        #'b4d557ae08439f3a4b8ed247e7951a7e'
         dwh.id
       end
     end
@@ -198,7 +197,7 @@ class StepQueue
         # render workspace from template
         erb = IO.read(File.join(File.dirname(__FILE__), ERB_FILE))
         renderer = ERB.new(erb)
-        workspace_file = File.join(ETL_DIR, WORKSPACE)
+        workspace_file = File.join(ETL_DIR, params['etl']['deploy_folder'] || '', WORKSPACE)
 
         # write the string to file
         File.open(workspace_file, 'w') do |f|
@@ -296,14 +295,16 @@ class StepQueue
           raise ArgumentError, "Params are missing the 'etl' section."
         end
 
-        if (Dir.entries(ETL_DIR) - %w{ . .. }).empty?
-          raise ArgumentError, "The directory '#{ETL_DIR}' is empty."
+        deploy_dir = File.join(ETL_DIR, params['etl']['deploy_folder'] || '')
+
+        if (Dir.entries(deploy_dir) - %w{ . .. }).empty?
+          raise ArgumentError, "The directory '#{deploy_dir}' is empty."
         end
 
         # deploy everything that's in etl
         process = GoodData::Command::Process.deploy(
-          ETL_DIR,
-          name: PROCESS_NAME,
+          deploy_dir,
+          name: "#{PROCESS_NAME} #{rand(1000).to_s}",
           type: params['etl']['type'] || 'GRAPH',
           client: StepQueue.client,
           project_id: StepQueue.progress['new_project_id']
